@@ -29,8 +29,8 @@ class DetectSign():
         self.pub_lane_toggle = rospy.Publisher('/detect/lane_toggle', Bool, queue_size=1)
         self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
 
-
-        self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
+        # self.Mission = Enum('Mission', 'Idle, DetectLane TrafficLight Intersection')
+        self.Mission = Enum('Mission', 'Idle DetectLane TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
         self.IntersectionStep = Enum('IntersectionStep', 'default process done')
         self.current_step = self.IntersectionStep.default.value
         
@@ -44,7 +44,46 @@ class DetectSign():
         self.is_saw_right_count = 0
         self.is_saw_right = False
         self.is_moving_complete = False
+        self.turn = 0.8
+        self.speed = 0.1
 
+    def left(self, angle):
+        turn_cmd = Twist()
+        turn_cmd.angular.z = self.turn  # หมุนซ้าย
+
+        rospy.loginfo(f"Turning left {angle} degrees.")
+        turn_duration = angle / 30.0  # ปรับตามความเร็วของการหมุน
+        for _ in range(int(turn_duration * 10)):
+            self.pub_cmd_vel.publish(turn_cmd)
+            rospy.sleep(0.1)
+
+        self.pub_cmd_vel.publish(Twist())  # หยุดหมุน
+
+    def right(self, angle):
+        turn_cmd = Twist()
+        turn_cmd.angular.z = -self.turn  # หมุนขวา
+
+        rospy.loginfo(f"Turning right {angle} degrees.")
+        turn_duration = angle / 30.0  # ปรับตามความเร็วของการหมุน
+        for _ in range(int(turn_duration * 10)):
+            self.pub_cmd_vel.publish(turn_cmd)
+            rospy.sleep(0.1)
+
+        self.pub_cmd_vel.publish(Twist())  # หยุดหมุน
+
+    def fd(self, distance):
+        move_cmd = Twist()
+        move_cmd.linear.x = self.speed  # ความเร็วเชิงเส้นที่หุ่นยนต์จะเดินหน้า (m/s)
+        distance /=100
+        # คำนวณระยะเวลาในการเคลื่อนที่ระยะทางที่ต้องการ (เวลา = ระยะทาง / ความเร็ว)
+        travel_time = distance / move_cmd.linear.x
+
+        rospy.loginfo(f"Moving forward for {distance} meters.")
+
+        # เคลื่อนที่ไปข้างหน้าในเวลาที่คำนวณได้
+        for _ in range(int(travel_time * 10)):  # คูณ 10 เพื่อเพิ่มความละเอียดของการนับเวลา
+            self.pub_cmd_vel.publish(move_cmd)
+            rospy.sleep(0.1)
     def cbOdom(self, odom_msg):
         self.current_orientation_w = odom_msg.pose.pose.orientation.w
 
@@ -203,7 +242,7 @@ class DetectSign():
 
         # intersection process
         if self.is_saw_intersection == True and self.current_step == self.IntersectionStep.default.value:
-            if self.current_orientation_w <= 0.1 and self.current_orientation_w >= -0.1 :
+            if self.current_orientation_w <= 0.3 and self.current_orientation_w >= -0.3 :
                 self.current_step = self.IntersectionStep.process.value
                 self.pub_lane_toggle.publish(False)
 
@@ -211,28 +250,27 @@ class DetectSign():
             # self.current_step = self.IntersectionStep.done.value
             if self.is_saw_right == True:
                 # 90 , 40, 150, 120
-                self.pub_top_y.publish(40)
-                self.pub_bot_x.publish(140)
+                # self.pub_top_y.publish(40)
+                # self.pub_bot_x.publish(140)
                 rospy.loginfo('RIGHT')
-                for x in range(0, 12):
-                    self.pub_fake_lane.publish(610)
-                    rospy.sleep(0.1)
-                self.pub_lane_toggle.publish(True)
-                rospy.sleep(10)
-                self.pub_lane_toggle.publish(False)
-                for x in range(0, 12):
-                    self.pub_fake_lane.publish(600)
-                    rospy.sleep(0.1)
+                DetectSign.left(self,20 )
+                DetectSign.fd(self,20 )
+                DetectSign.right(self,40 )
+                DetectSign.fd(self,20 )
+                
+                self.is_saw_right = False
                 self.pub_lane_toggle.publish(True)
                 
             elif self.is_saw_left == True:
                 # 90 , 40, 100, 120
-                self.pub_top_y.publish(40)
-                self.pub_bot_x.publish(100)
-                rospy.loginfo('LEFT')
-                for x in range(0, 17):
-                    self.pub_fake_lane.publish(380)
-                    rospy.sleep(0.1)
+                # self.pub_top_y.publish(40)
+                # self.pub_bot_x.publish(100)
+                DetectSign.left(self,420 )
+                DetectSign.fd(self,20 )
+                DetectSign.left(self,80 )
+                DetectSign.fd(self,20 )
+               
+                self.is_saw_left = False
                 self.pub_lane_toggle.publish(True)
 
             # go to next mission
